@@ -97,7 +97,7 @@ footer{font-size:11px;color:var(--mut);line-height:1.5;text-align:center;padding
     <svg class="logo"><use href="#bomb"/></svg>
     <h1>Grok Bot</h1>
     <div class="tag">GROKIUS TERMINAL</div>
-    <div class="feat"><div class="ico">📡</div><div><b>Live dex feed</b><span>Real Pump.fun tokens from DexScreener, refreshed every ~25s</span></div></div>
+    <div class="feat"><div class="ico">📡</div><div><b>Live dex feed</b><span>Real Pump.fun tokens from DexScreener, refreshed every 5 minutes</span></div></div>
     <div class="feat"><div class="ico">🛡️</div><div><b>Rug guard</b><span>Liquidity, age, volume, authority &amp; dump checks kill weak tokens</span></div></div>
     <div class="feat"><div class="ico">🎯</div><div><b>Auto exit</b><span>Paper stop-loss and take-profit on every paper copy</span></div></div>
     <button class="start" id="startBtn">Start</button>
@@ -151,7 +151,7 @@ footer{font-size:11px;color:var(--mut);line-height:1.5;text-align:center;padding
 'use strict';
 const DS='https://api.dexscreener.com';
 const RC='https://api.rugcheck.xyz/v1/tokens/';
-const POLL_MS=25000, KEY='grokius.v1', START=100;
+const POLL_MS=300000, KEY='grokius.v1', START=100;
 const RULES={minLiq:20000,minAgeMin:30,minVol24:50000,minMcap:50000,minBuySell:1.1,maxM5Drop:-10,maxH1Drop:-20,minLiqMcap:0.05,maxBoost:500,maxH24:1500,
   maxOpen:5,allocPct:0.10,fee:0.01,stop:-0.15,take:0.50,rugLiq:5000,maxHoldMin:180,recheckMin:30};
 const $=id=>document.getElementById(id);
