@@ -65,6 +65,7 @@ button.reset:hover{color:var(--txt);border-color:#6a1a1a}
 .sym{font-weight:800;color:var(--amber)}.sym:hover{text-decoration:underline}
 @keyframes in{from{opacity:0;transform:translateY(-6px)}}
 .pos-list{margin-top:8px}
+.last-trade{margin-top:8px;font-size:12px;font-weight:700;color:var(--mut);line-height:1.4}
 .pr{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-top:1px dashed rgba(90,20,20,.6);font-weight:600}
 .pr .mut{color:var(--mut);font-weight:600}
 footer{font-size:11px;color:var(--mut);line-height:1.5;text-align:center;padding:6px 10px 0}
@@ -145,6 +146,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
     <canvas id="chart"></canvas>
     <div class="eq-bot"><button class="reset" id="resetBtn">↺ reset sim</button><span id="wr">0 copied · 0% win</span></div>
     <div class="pos-list" id="posList"></div>
+    <div class="last-trade" id="lastTrade"></div>
   </section>
 
   <section class="card" id="trackers">
@@ -188,20 +190,23 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const now=()=>Date.now();
 
 // ---------- state ----------
-function fresh(){return {cash:START,pos:{},closed:[],hist:[{t:now(),v:START}],log:[],seen:{},cnt:{},kills:{},c:{signals:0,passed:0,fKill:0,aKill:0,copied:0,stops:0},sparks:{},watch:[],snap:{},v:1}}
+function fresh(){return {cash:START,pos:{},closed:[],hist:[{t:now(),v:START}],log:[],seen:{},closedAt:{},cnt:{},kills:{},c:{signals:0,passed:0,fKill:0,aKill:0,copied:0,stops:0},sparks:{},watch:[],snap:{},v:1}}
 function loadState(){
   let raw;
-  try{raw=JSON.parse(localStorage.getItem(KEY))}catch(e){raw=null}
+  try{raw=JSON.parse(localStorage.getItem(KEY))}catch(e){console.warn('paper state unreadable:',e&&e.message||e);raw=null}
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return fresh();
-  // v1 saves stay valid. Extra tracker fields are optional, so old books are kept.
-  if(raw.v!==1)return fresh();
+  // Keep a recognizable book even if v was missing. Only a non-book payload is discarded.
+  const bookish=typeof raw.cash==='number'||(raw.pos&&typeof raw.pos==='object'&&!Array.isArray(raw.pos))||Array.isArray(raw.closed);
+  if(!bookish)return fresh();
+  if(raw.v!==1)console.warn('paper state version',raw.v,'— keeping the saved book');
   const s=fresh();
   if(typeof raw.cash==='number'&&isFinite(raw.cash))s.cash=raw.cash;
-  if(raw.pos&&typeof raw.pos==='object')s.pos=raw.pos;
+  if(raw.pos&&typeof raw.pos==='object'&&!Array.isArray(raw.pos))s.pos=raw.pos;
   if(Array.isArray(raw.closed))s.closed=raw.closed;
   if(Array.isArray(raw.hist)&&raw.hist.length)s.hist=raw.hist;
   if(Array.isArray(raw.log))s.log=raw.log;
-  if(raw.seen&&typeof raw.seen==='object')s.seen=raw.seen;
+  if(raw.seen&&typeof raw.seen==='object'&&!Array.isArray(raw.seen))s.seen=raw.seen;
+  if(raw.closedAt&&typeof raw.closedAt==='object'&&!Array.isArray(raw.closedAt))s.closedAt=raw.closedAt;
   if(raw.cnt&&typeof raw.cnt==='object')s.cnt=raw.cnt;
   if(raw.kills&&typeof raw.kills==='object')s.kills=raw.kills;
   if(raw.c&&typeof raw.c==='object')s.c=Object.assign(s.c,raw.c);
@@ -209,14 +214,30 @@ function loadState(){
   if(Array.isArray(raw.watch))s.watch=raw.watch.filter(m=>typeof m==='string');
   if(raw.snap&&typeof raw.snap==='object')s.snap=raw.snap;
   s.v=1;
-  for(const p of Object.values(s.pos)){
-    if(p&&typeof p.lastLiq!=='number'&&typeof p.liq==='number')p.lastLiq=p.liq;
-    if(p&&typeof p.peakLiq!=='number'&&typeof p.liq==='number')p.peakLiq=p.liq;
+  s.closedAt=s.closedAt||{};
+  for(const c of s.closed){if(c&&c.mint&&typeof c.t==='number'&&!(s.closedAt[c.mint]>c.t))s.closedAt[c.mint]=c.t}
+  for(const [m,p] of Object.entries(s.pos)){
+    if(!p||typeof p!=='object'){delete s.pos[m];continue}
+    if(typeof p.lastLiq!=='number'&&typeof p.liq==='number')p.lastLiq=p.liq;
+    if(typeof p.peakLiq!=='number'&&typeof p.liq==='number')p.peakLiq=p.liq;
+    if(!(s.seen[m]>0))s.seen[m]=p.t||now();
   }
   return s;
 }
 let S=loadState();
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+function save(){
+  const write=obj=>{localStorage.setItem(KEY,JSON.stringify(obj))};
+  try{write(S)}catch(e){
+    try{
+      write({...S,sparks:{},snap:{},hist:(S.hist||[]).slice(-120),log:(S.log||[]).slice(-40)});
+      console.warn('paper save trimmed tracker cache:',e&&e.message||e);
+    }catch(e2){console.warn('paper save failed:',e2&&e2.message||e2)}
+  }
+}
+function persistNow(){try{save()}catch(e){console.warn('paper persist failed:',e&&e.message||e)}}
+addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistNow()});
+addEventListener('pagehide',persistNow);
+addEventListener('beforeunload',persistNow);
 const equity=()=>S.cash+Object.values(S.pos).reduce((a,p)=>a+p.qty*p.last*(1-RULES.fee),0);
 
 // ---------- log ----------
@@ -224,7 +245,21 @@ const STAGE={Scout:'c-scout',Filter:'c-filter',Analyst:'c-analyst',Sniper:'c-sni
 const cleanSym=s=>String(s||'?').replace(/^\$+/,'');
 function safeUrl(u){try{const x=new URL(u);if(x.protocol==='https:'||x.protocol==='http:')return x.href}catch(e){}return ''}
 function symLink(sym,url){const href=safeUrl(url);const label='$'+esc(cleanSym(sym));return href?`<a class="sym" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`:`<span class="sym">${label}</span>`}
-function log(stage,html){S.log.unshift({t:now(),s:stage,h:html});if(S.log.length>80)S.log.length=80;renderLog()}
+function log(stage,html){S.log.unshift({t:now(),s:stage,h:html});if(S.log.length>80)S.log.length=80;renderLog();save()}
+function lastTradeBits(){
+  const events=[];
+  for(const [,p] of Object.entries(S.pos||{})){if(p&&p.t)events.push({t:p.t,html:`open ${symLink(p.sym,p.url)} at ${fmtPrice(p.entry)}`})}
+  for(const c of S.closed||[]){if(c&&c.t)events.push({t:c.t,html:`exit ${symLink(c.sym,c.url||'')} paper P&L ${fmtUsd(c.pnl)}`})}
+  events.sort((a,b)=>b.t-a.t);
+  return events[0]||null;
+}
+function renderLastTrade(){
+  const el=$('lastTrade'); if(!el)return;
+  const last=lastTradeBits();
+  const n=Object.keys(S.pos||{}).length;
+  if(!last&&!n){el.textContent='';return}
+  el.innerHTML=`Last paper trade: ${last?last.html:'none yet'} · ${n} open`;
+}
 function renderLog(){
   const el=$('log');
   el.innerHTML=S.log.slice(0,40).map((l,i)=>{const d=new Date(l.t);const op=Math.max(.18,1-i*0.045);
@@ -246,6 +281,7 @@ function renderEquity(){
   $('wr').textContent=`${S.c.copied} copied · ${n?Math.round(wins/n*100):0}% win${n?'':' (no exits yet)'}`;
   const ps=Object.values(S.pos);
   $('posList').innerHTML=ps.length?ps.map(p=>{const r=(p.last/p.entry-1)*100;return `<div class="pr"><span>${symLink(p.sym,p.url)} <span class="mut">in ${fmtPrice(p.entry)} → ${fmtPrice(p.last)}</span></span><span class="${r>=0?'pos':'neg'}">${fmtPct(r)}</span></div>`}).join(''):'<div class="pr"><span class="mut">No open paper positions · cash '+fmtUsd(S.cash)+'</span></div>';
+  renderLastTrade();
   drawChart(true);
 }
 
@@ -685,10 +721,13 @@ async function scanBody(){
   S.c.aKill+=ak; S.c.passed+=survivors.length;
   setSt('analyst',rcPass.length?`${survivors.length} of ${rcPass.length} passed deep checks`:'no tokens reached deep checks this scan');
 
+  if(my!==epoch)return;
   let copied=0;
   for(const m of survivors){
     const p=PAIRS[m], price=parseFloat(p.priceUsd);
-    if(S.pos[m]||!(price>0))continue;
+    if(!(price>0))continue;
+    if(S.pos[m]){sayOnce('open:'+m,'Sniper',`kept open ${symLink(p.baseToken.symbol,p.url)} — already in the book`,RULES.recheckMin*60000);continue}
+    if(S.closedAt&&S.closedAt[m]&&t-S.closedAt[m]<RULES.recheckMin*60000){sayOnce('closed:'+m,'Sniper',`kept last trade ${symLink(p.baseToken.symbol,p.url)} — closed recently`,RULES.recheckMin*60000);continue}
     if(Object.keys(S.pos).length>=RULES.maxOpen){log('Sniper',`skipped ${symLink(p.baseToken.symbol,p.url)} – ${RULES.maxOpen} paper slots full`); continue}
     const alloc=Math.min(S.cash,equity()*RULES.allocPct); if(alloc<1){log('Sniper','no paper cash left'); break}
     S.cash-=alloc; const qty=alloc*(1-RULES.fee)/price;
@@ -749,9 +788,12 @@ function guard(pairs){
     if(cur!=null){p.lastLiq=cur; p.peakLiq=Math.max(p.peakLiq||p.liq||0, cur)}
     if(why){
       const proceeds=p.qty*p.last*(1-RULES.fee), pnl=proceeds-p.cost;
-      S.cash+=proceeds; S.closed.push({sym:p.sym,pnl,t}); if(S.closed.length>200)S.closed.shift();
+      S.cash+=proceeds; S.closed.push({sym:p.sym,mint:m,url:p.url,entry:p.entry,exit:p.last,pnl,t}); if(S.closed.length>200)S.closed.shift();
+      if(!S.closedAt)S.closedAt={};
+      S.closedAt[m]=t; S.seen[m]=t;
       if(stop)S.c.stops++; delete S.pos[m]; exits++;
       log('Guard',why+` · paper P&L ${fmtUsd(pnl)}`);
+      save();
     }
   }
   const n=Object.keys(S.pos).length;
@@ -810,7 +852,11 @@ $('resetBtn').onclick=()=>{if(!confirm('Reset the paper simulation to $100? This
   fails=0; clearTimeout(cycle._t); cycle()};
 let started=false;
 function start(){if(started)return; started=true; $('splash').classList.add('hide'); setTimeout(()=>$('splash').remove(),600);
-  if(!S.log.length)log('System','GROKIUS paper sim started at $100.00 · discovery every 2 minutes · paper prices every 45s · research only');
+  const n=Object.keys(S.pos||{}).length;
+  const book=n>0||(S.closed&&S.closed.length>0)||(S.c&&S.c.copied>0)||(S.hist&&S.hist.length>1)||Math.abs(S.cash-START)>0.009;
+  if(book){const last=lastTradeBits(); log('System',`Resumed session: ${n} open position${n===1?'':'s'}, last trade ${last?last.html:'none yet'}`)}
+  else if(!S.log.length)log('System','GROKIUS paper sim started at $100.00 · discovery every 2 minutes · paper prices every 45s · research only');
+  save();
   cycle(); clearTimeout(priceLoop._t); priceLoop._t=setTimeout(priceLoop,PRICE_MS)}
 $('startBtn').onclick=start;
 if(new URLSearchParams(location.search).has('autostart'))start();
