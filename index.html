@@ -118,7 +118,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
     <div class="tag">GROKIUS TERMINAL</div>
     <div class="feat"><div class="ico">📡</div><div><b>Live dex feed</b><span>Real Pump.fun tokens from DexScreener, refreshed every 2 minutes</span></div></div>
     <div class="feat"><div class="ico">🛡️</div><div><b>Rug guard</b><span>Liquidity, age, volume, authority &amp; dump checks kill weak tokens</span></div></div>
-    <div class="feat"><div class="ico">🎯</div><div><b>Auto exit</b><span>Paper stop −20% and take +20% on every paper copy</span></div></div>
+    <div class="feat"><div class="ico">🎯</div><div><b>Auto exit</b><span>Paper stop −20%, and take +$10 or +20% — whichever comes first</span></div></div>
     <button class="start" id="startBtn">Start</button>
     <div class="disc">Research tool &amp; paper simulation only. No wallet, no trading, not real money, not financial advice.</div>
   </div>
@@ -161,7 +161,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
     <div class="row"><div class="ico">🧪</div><div class="rt"><b>Filter</b><div class="sub">Liquidity · age · volume · authority</div><div class="st" id="st-filter">waiting…</div></div><span class="pill p-red" id="pl-filter">0 killed</span></div>
     <div class="row"><div class="ico">🧠</div><div class="rt"><b>Analyst</b><div class="sub">Buy/sell · dumps · liq/mcap · boosts</div><div class="st" id="st-analyst">waiting…</div></div><span class="pill p-red" id="pl-analyst">0 killed</span></div>
     <div class="row"><div class="ico">🎯</div><div class="rt"><b>Sniper</b><div class="sub">Paper-copies survivors</div><div class="st" id="st-sniper">waiting…</div></div><span class="pill p-green" id="pl-sniper">0 paper copied</span></div>
-    <div class="row"><div class="ico">🛡️</div><div class="rt"><b>Guard</b><div class="sub">Stop −20% · take +20% · rug exit</div><div class="st" id="st-guard">waiting…</div></div><span class="pill p-purple" id="pl-guard">0 max loss</span></div>
+    <div class="row"><div class="ico">🛡️</div><div class="rt"><b>Guard</b><div class="sub">Stop −20% · take +$10 or +20% · rug exit</div><div class="st" id="st-guard">waiting…</div></div><span class="pill p-purple" id="pl-guard">0 max loss</span></div>
   </section>
 
   <section class="card">
@@ -169,7 +169,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
     <div class="log" id="log"></div>
   </section>
 
-  <footer>Research tool and paper simulation only. Prices from DexScreener, authority checks from RugCheck. Discovery is refreshed every 2 minutes. Open paper prices refresh about every 45 seconds. Paper fills at quoted price with a 1% fee per side; real fills would be worse. No wallet, no trading, not real money, not financial advice. Meme coins can go to zero.</footer>
+  <footer>Research tool and paper simulation only. Prices from DexScreener, authority checks from RugCheck. Discovery is refreshed every 2 minutes. Open paper prices refresh about every 45 seconds. Paper exits: stop −20%, take profit at +$10 or +20% (whichever comes first), and a liquidity-pull rug exit. Paper fills at quoted price with a 1% fee per side; real fills would be worse. No wallet, no trading, not real money, not financial advice. Meme coins can go to zero.</footer>
 </div>
 
 <script>
@@ -177,7 +177,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
 'use strict';
 const DS='https://api.dexscreener.com';
 const RC='https://api.rugcheck.xyz/v1/tokens/';
-const POLL_MS=120000, PRICE_MS=45000, KEY='grokius.v1', START=100, TRACK_EXTRA=12, BATCH=30;
+const POLL_MS=120000, PRICE_MS=45000, TP_USD=10, KEY='grokius.v1', START=100, TRACK_EXTRA=12, BATCH=30;
 const LIQ_EXIT=0.50, LIQ_FLAG=0.25;
 const RULES={minLiq:20000,minAgeMin:30,minVol24:50000,minMcap:50000,minBuySell:1.1,maxM5Drop:-10,maxH1Drop:-20,minLiqMcap:0.05,maxBoost:500,maxH24:1500,
   maxOpen:5,allocPct:0.10,fee:0.01,stop:-0.20,take:0.20,rugLiq:5000,maxHoldMin:180,recheckMin:30};
@@ -249,7 +249,7 @@ function log(stage,html){S.log.unshift({t:now(),s:stage,h:html});if(S.log.length
 function lastTradeBits(){
   const events=[];
   for(const [,p] of Object.entries(S.pos||{})){if(p&&p.t)events.push({t:p.t,html:`open ${symLink(p.sym,p.url)} at ${fmtPrice(p.entry)}`})}
-  for(const c of S.closed||[]){if(c&&c.t)events.push({t:c.t,html:`exit ${symLink(c.sym,c.url||'')} paper P&L ${fmtUsd(c.pnl)}`})}
+  for(const c of S.closed||[]){if(c&&c.t)events.push({t:c.t,html:`exit ${symLink(c.sym,c.url||'')}${c.rule?` ${esc(c.rule)}`:''} paper P&L ${fmtUsd(c.pnl)}`})}
   events.sort((a,b)=>b.t-a.t);
   return events[0]||null;
 }
@@ -779,16 +779,26 @@ function guard(pairs){
     const q=pairs[m]; if(!q)continue;
     const price=parseFloat(q.priceUsd); if(price>0)p.last=price;
     const cur=liqNow(q), r=p.entry>0?p.last/p.entry-1:0, age=(t-p.t)/60000;
+    const size=(typeof p.cost==='number'&&p.cost>0)?p.cost:(p.qty>0&&p.entry>0?p.qty*p.entry/(1-RULES.fee):0);
+    const usdPnl=size*r;
+    const hitUsd=price>0&&size>0&&usdPnl>=TP_USD;
+    const hitPct=price>0&&r>=RULES.take;
     const collapse=collapseReason(p,q);
-    let why=null, stop=false;
+    let why=null, stop=false, rule=null;
     if(collapse){why=`possible rug ${symLink(p.sym,p.url)} – ${collapse}`; stop=true}
     else if(price>0&&r<=RULES.stop){why=`stop hit ${symLink(p.sym,p.url)} – ${fmtPct(r*100)}`; stop=true}
-    else if(price>0&&r>=RULES.take)why=`take profit ${symLink(p.sym,p.url)} – ${fmtPct(r*100)}`;
+    else if(hitUsd||hitPct){
+      const pxUsd=size>0?p.entry*(1+TP_USD/size):Infinity;
+      const pxPct=p.entry*(1+RULES.take);
+      const usdFirst=hitUsd&&(!hitPct||pxUsd<=pxPct);
+      rule=usdFirst?'take profit +$10':'take profit +20%';
+      why=usdFirst?`${rule} ${symLink(p.sym,p.url)} – ${fmtUsd(usdPnl)} (${fmtPct(r*100)})`:`${rule} ${symLink(p.sym,p.url)} – ${fmtPct(r*100)}`;
+    }
     else if(age>=RULES.maxHoldMin)why=`time exit ${symLink(p.sym,p.url)} after ${Math.round(age)}m – ${fmtPct(r*100)}`;
     if(cur!=null){p.lastLiq=cur; p.peakLiq=Math.max(p.peakLiq||p.liq||0, cur)}
     if(why){
       const proceeds=p.qty*p.last*(1-RULES.fee), pnl=proceeds-p.cost;
-      S.cash+=proceeds; S.closed.push({sym:p.sym,mint:m,url:p.url,entry:p.entry,exit:p.last,pnl,t}); if(S.closed.length>200)S.closed.shift();
+      S.cash+=proceeds; S.closed.push({sym:p.sym,mint:m,url:p.url,entry:p.entry,exit:p.last,pnl,t,rule}); if(S.closed.length>200)S.closed.shift();
       if(!S.closedAt)S.closedAt={};
       S.closedAt[m]=t; S.seen[m]=t;
       if(stop)S.c.stops++; delete S.pos[m]; exits++;
