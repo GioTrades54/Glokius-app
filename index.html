@@ -115,7 +115,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
     <svg class="logo"><use href="#bomb"/></svg>
     <h1>Grok Bot</h1>
     <div class="tag">GROKIUS TERMINAL</div>
-    <div class="feat"><div class="ico">📡</div><div><b>Live dex feed</b><span>Real Pump.fun tokens from DexScreener, refreshed every 5 minutes</span></div></div>
+    <div class="feat"><div class="ico">📡</div><div><b>Live dex feed</b><span>Real Pump.fun tokens from DexScreener, refreshed every 2 minutes</span></div></div>
     <div class="feat"><div class="ico">🛡️</div><div><b>Rug guard</b><span>Liquidity, age, volume, authority &amp; dump checks kill weak tokens</span></div></div>
     <div class="feat"><div class="ico">🎯</div><div><b>Auto exit</b><span>Paper stop −20% and take +20% on every paper copy</span></div></div>
     <button class="start" id="startBtn">Start</button>
@@ -149,7 +149,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
 
   <section class="card" id="trackers">
     <div class="chead"><h2>Trackers</h2><span id="scanEta">next scan —</span></div>
-    <div class="meta-line"><span id="priceAgo">prices —</span><span>refreshed every 5 minutes</span></div>
+    <div class="meta-line"><span id="priceAgo">prices —</span><span>refreshed every 2 minutes</span></div>
     <div class="table-wrap" id="tracker"></div>
   </section>
 
@@ -167,7 +167,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
     <div class="log" id="log"></div>
   </section>
 
-  <footer>Research tool and paper simulation only. Prices from DexScreener, authority checks from RugCheck. Discovery is refreshed every 5 minutes. Open paper prices refresh about every 45 seconds. Paper fills at quoted price with a 1% fee per side; real fills would be worse. No wallet, no trading, not real money, not financial advice. Meme coins can go to zero.</footer>
+  <footer>Research tool and paper simulation only. Prices from DexScreener, authority checks from RugCheck. Discovery is refreshed every 2 minutes. Open paper prices refresh about every 45 seconds. Paper fills at quoted price with a 1% fee per side; real fills would be worse. No wallet, no trading, not real money, not financial advice. Meme coins can go to zero.</footer>
 </div>
 
 <script>
@@ -175,7 +175,7 @@ button.copy:hover{color:var(--txt);border-color:#6a1a1a}
 'use strict';
 const DS='https://api.dexscreener.com';
 const RC='https://api.rugcheck.xyz/v1/tokens/';
-const POLL_MS=300000, PRICE_MS=45000, KEY='grokius.v1', START=100, TRACK_EXTRA=12, BATCH=30;
+const POLL_MS=120000, PRICE_MS=45000, KEY='grokius.v1', START=100, TRACK_EXTRA=12, BATCH=30;
 const LIQ_EXIT=0.50, LIQ_FLAG=0.25;
 const RULES={minLiq:20000,minAgeMin:30,minVol24:50000,minMcap:50000,minBuySell:1.1,maxM5Drop:-10,maxH1Drop:-20,minLiqMcap:0.05,maxBoost:500,maxH24:1500,
   maxOpen:5,allocPct:0.10,fee:0.01,stop:-0.20,take:0.20,rugLiq:5000,maxHoldMin:180,recheckMin:30};
@@ -810,7 +810,7 @@ $('resetBtn').onclick=()=>{if(!confirm('Reset the paper simulation to $100? This
   fails=0; clearTimeout(cycle._t); cycle()};
 let started=false;
 function start(){if(started)return; started=true; $('splash').classList.add('hide'); setTimeout(()=>$('splash').remove(),600);
-  if(!S.log.length)log('System','GROKIUS paper sim started at $100.00 · discovery every 5 minutes · paper prices every 45s · research only');
+  if(!S.log.length)log('System','GROKIUS paper sim started at $100.00 · discovery every 2 minutes · paper prices every 45s · research only');
   cycle(); clearTimeout(priceLoop._t); priceLoop._t=setTimeout(priceLoop,PRICE_MS)}
 $('startBtn').onclick=start;
 if(new URLSearchParams(location.search).has('autostart'))start();
